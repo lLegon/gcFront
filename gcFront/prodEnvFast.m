@@ -45,6 +45,9 @@ s2=optimizeCbModel2(m);
 % flux vector
 if s2.stat==1
     s2.f=s2.x(targetInd);
+else
+    warning('Production envelope is inaccurate- model was infeasible when calculating minimum product at min growth. Consider increasing tolerance to numerical error.')
+    s2.f=0;
 end
 
 % maximise growth
@@ -60,6 +63,9 @@ s4=optimizeCbModel2(m);
 % flux vector
 if s4.stat==1
     s4.f=s4.x(targetInd);
+else
+    warning('Production envelope is inaccurate- model was infeasible when calculating minimum product at max growth. Consider increasing tolerance to numerical error.')
+    s4.f=0;
 end
 
 valueListL=[s.f,s2.f,0;s3.f,s4.f,1];
@@ -71,6 +77,9 @@ while length(valueListL)<inf
     newValueList=nan(size(valueListL));
     for a=1:size(valueListL,1)-1
         if valueListL(a,3)==0
+            % test if the production envelope is a straight line between
+            % two points. If it is, then no need to test any more points
+            % along this segment of the production envelope.
             midGrowth=mean(valueListL(a:a+1,1));
             m.lb(model.c==1)=midGrowth-tol;
             m.ub(model.c==1)=midGrowth+tol;
@@ -79,6 +88,11 @@ while length(valueListL)<inf
             % flux vector
             if s5.stat==1
                 s5.f=s5.x(targetInd);
+            else
+                % min product could not be calculated- will assume that
+                % production envelope is a straight line
+                warning('Production envelope may be inaccurate- model was infeasible when calculating minimum product. Consider increasing tolerance to numerical error.')
+                s5.f=mean(valueListL(a:a+1,2));
             end
             
             if abs(s5.f-mean(valueListL(a:a+1,2)))<lineTol
@@ -109,6 +123,10 @@ m=model;
 m.c=double(targetInd);
 m.ub(model.c==1)=s.f+tol;
 s2=optimizeCbModel2(m);
+if s2.stat~=1
+    warning('Production envelope is inaccurate- model was infeasible when calculating maximum product at min growth. Consider increasing tolerance to numerical error.')
+    s2.f=0;
+end
 
 % maximise growth- can use previous value
 % s3=optimizeCbModel(model,'max');
@@ -118,6 +136,10 @@ m=model;
 m.c=double(targetInd);
 m.lb(model.c==1)=s3.f-tol;
 s4=optimizeCbModel2(m);
+if s4.stat~=1
+    warning('Production envelope is inaccurate- model was infeasible when calculating maximum product at max growth. Consider increasing tolerance to numerical error.')
+    s4.f=0;
+end
 
 valueListH=[s.f,s2.f,0;s3.f,s4.f,1];
 
@@ -132,6 +154,12 @@ while length(valueListH)<inf
             m.lb(model.c==1)=midGrowth-tol;
             m.ub(model.c==1)=midGrowth+tol;
             s5=optimizeCbModel2(m);
+            
+            if s5.stat~=1
+                warning('Production envelope may be inaccurate- model was infeasible when calculating maximum product. Consider increasing tolerance to numerical error.')
+                s5.f=mean(valueListH(a:a+1,2));
+            end
+            
             if abs(s5.f-mean(valueListH(a:a+1,2)))<lineTol
                 valueListH(a,3)=1;
             else

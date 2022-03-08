@@ -39,6 +39,8 @@ function [designTable, options, model]=gcFront(model,targetRxn,options)
 % options.spreadchangelimit = Double specifying how low the change in spread must be before the algorithm terminates. For further information see MATLAB's 'gamultiobj Algorithm' documentation. Default = 10^-4
 % options.stallgenlimit = Double specifying the number of generations that change in spread must be below spreadchangelimit before the algorithm terminates. For further information see MATLAB's 'gamultiobj Algorithm' documentation. Default = number of generations (i.e. the algorithm will never terminate due to spread being too low)
 % options.plotinterval = Double specifying the number of generations that must pass before the algorithm updates the plot of the current designs. Default = 1 (i.e. updates every generation)
+% options.newredundantremoval = Logical specifying whether to use a new, faster method for removing redundant KOs, or to use the original version that was used to obtain the data for the gcFront paper.
+% options.maxreductionsize = Double specifying the maximum size of design that should be fully explored for removal of redundant KOs
 %
 % OUTPUTS:
 % designTable = a table containing deletions and metrics affiliated with
@@ -165,7 +167,7 @@ options.starttime=datetime('now','Format','yy_M_d HH_mm');
 
 % dealing parameters in options to the appropriate variable
 
-[tol, tiltVal, shiftVal, delOptions.skipReduction, minGrowth, minProd, removeRedundancy, saveResults, maxKnockouts, deleteGenes, delOptions.ignoreListRxns, delOptions.ignoreListGenes, delOptions.dontKoEss, delOptions.onlyKoGeneAssoc, popSize, genLimit, timeLimit, fitnessLimit, spreadChangeLimit, stallGenLimit, plotInterval]=deal( options.tol, options.tiltval, options.shiftval, options.skipreduction, options.mingrowth, options.minprod, options.removeredundancy, options.saveresults, options.maxknockouts, options.deletegenes, options.ignorelistrxns, options.ignorelistgenes, options.dontkoess, options.onlykogeneassoc, options.popsize, options.genlimit, options.timelimit, options.fitnesslimit, options.spreadchangelimit, options.stallgenlimit, options.plotinterval);
+[tol, tiltVal, shiftVal, delOptions.skipReduction, minGrowth, minProd, removeRedundancy, saveResults, maxKnockouts, deleteGenes, delOptions.ignoreListRxns, delOptions.ignoreListGenes, delOptions.dontKoEss, delOptions.onlyKoGeneAssoc, popSize, genLimit, timeLimit, fitnessLimit, spreadChangeLimit, stallGenLimit, plotInterval, newredundantremoval, maxreductionsize]=deal( options.tol, options.tiltval, options.shiftval, options.skipreduction, options.mingrowth, options.minprod, options.removeredundancy, options.saveresults, options.maxknockouts, options.deletegenes, options.ignorelistrxns, options.ignorelistgenes, options.dontkoess, options.onlykogeneassoc, options.popsize, options.genlimit, options.timelimit, options.fitnesslimit, options.spreadchangelimit, options.stallgenlimit, options.plotinterval, options.newredundantremoval, options.maxreductionsize);
 
 % reduce model
 
@@ -225,7 +227,7 @@ wtEnv=prodEnvFast(model,targetRxn,0);
 % find fitness of the WT design
 % defaultFitness=myFitness3obj(false(1,length(delsToInds)), poolModel, delsToInds, targetInd, growthInd, nRxns, tol, minGrowth, shiftVal, -inf, tiltVal, deleteGenes, geneRules, geneMat);
 % defaultFitness=-defaultFitness(end);
-defaultFitness=-inf;
+defaultFitness=-1000000;
 
 
 % create function handles for the GA
@@ -323,40 +325,48 @@ if ~isempty(noMatchFound)
     end
 end
 
-
-if removeRedundancy==true && max(designTable{:,4})>tol
-    disp('Removing redundant deletions from identified designs')
-    % test removal of single genes/reactions from coupled designs to see if score is
-    % maintained
-
-    coupledInds=designTable{:,4}>tol;
-    
-    currDesigns=x(coupledInds,:);
-    currFitnesses=designTable{coupledInds,3:5};
-    designTable=reduceDesigns(model, currDesigns, currFitnesses, FitnessFcn, tol, deleteGenes, delsToInds);
-    
-    % remove designs with non-unique metrics if they have more deletions than
-    % others
-    
-    redundantDesigns=false(size(designTable,1),1);
-    for a=1:length(redundantDesigns)
-        if redundantDesigns(a)==true
-            continue
+if max(designTable{:,4})>tol
+    if removeRedundancy==true
+        disp('Removing redundant deletions from identified designs')
+        % test removal of single genes/reactions from coupled designs to see if score is
+        % maintained
+        
+        coupledInds=designTable{:,4}>tol;
+        
+        currDesigns=x(coupledInds,:);
+        currFitnesses=designTable{coupledInds,3:5};
+        
+        if newredundantremoval
+            designTable=newReduceDesigns(model, currDesigns, currFitnesses, FitnessFcn, tol, deleteGenes, delsToInds, maxreductionsize);
+        else
+            designTable=reduceDesigns(model, currDesigns, currFitnesses, FitnessFcn, tol, deleteGenes, delsToInds);
         end
         
-        matchingMetrics=find(ismember(designTable{:,3:5} ,designTable{a,3:5}, 'rows'));
+        % remove designs with non-unique metrics if they have more deletions than
+        % others
         
-        if length(matchingMetrics)>1
+        redundantDesigns=false(size(designTable,1),1);
+        for a=1:length(redundantDesigns)
+            if redundantDesigns(a)==true
+                continue
+            end
             
-            moreDels=designTable{matchingMetrics,2}~=min(designTable{matchingMetrics,2});
-            redundantDesigns(matchingMetrics(moreDels))=true;
+            matchingMetrics=find(ismember(designTable{:,3:5} ,designTable{a,3:5}, 'rows'));
+            
+            if length(matchingMetrics)>1
+                
+                moreDels=designTable{matchingMetrics,2}~=min(designTable{matchingMetrics,2});
+                redundantDesigns(matchingMetrics(moreDels))=true;
+                
+            end
             
         end
         
+        designTable=designTable(~redundantDesigns,:);
+    else
+        coupledInds=designTable{:,4}>tol;
+        designTable=designTable(coupledInds,:);
     end
-    
-    designTable=designTable(~redundantDesigns,:);
-    
 end
 
 % calculate Euclidian distance between normalised metrics of coupled designs and ideal point

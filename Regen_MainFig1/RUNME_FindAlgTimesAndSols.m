@@ -497,6 +497,7 @@ for a=1:nRepeats
                 optGCFRONT.timelimit=timeLimit;
                 optGCFRONT.maxknockouts=nDeletions;
                 optGCFRONT.saveresults=false;
+                optGCFRONT.newredundantremoval=false;
                 
                 optGCFRONT.ignorelistrxns=forbiddenRxns;
                 optGCFRONT.dontkoess=false; % all computationally essential genes are in forbiddenRxns, and it would be an unfair comparison to add the time required to calculate these onto gcFront's time when this is not being added to the others

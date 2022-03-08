@@ -14,7 +14,7 @@ if max(scores(:,3))<=0
         xlabel('Growth rate (/h)')
         ylabel('Coupling strength')
         xlim([0,inf])
-        ylim([defaultFitness,0])    
+        ylim([min(setdiff(scores(:,3),defaultFitness)),0])    
     end
     
     scatter(scores(:,1),scores(:,3),50,'kx','LineWidth',3)

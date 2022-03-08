@@ -54,7 +54,7 @@ if delOptions.skipReduction==0
     
     % check if removing the zero-flux reactions changed growth rate- if it
     % did, warn the user in case the reactions being removed actually do matter
-    if abs(s2.f-s.f)>tol
+    if abs(s2.f-s.f)>tol || isnan(s2.f)
         warning('on','all');
         warning(['Model reduction made growth rate shift by ', num2str(abs(s2.f-s.f)),' when minimum flux tolerance is ',num2str(tol)])
     end
@@ -340,7 +340,7 @@ if delOptions.skipReduction==0
     
     s3=optimizeCbModel(model);
     % check if pooling reactions affected growth rate at all
-    if abs(s3.f-s.f)>tol
+    if abs(s3.f-s.f)>tol || isnan(s3.f)
         warning(['Reaction pooling during model reduction made growth rate shift by ', num2str(abs(s3.f-s.f)),' when tolerance to flux deviation has been set to ',num2str(tol),' - something may have gone wrong during model reduction.'])
     end
     
@@ -353,12 +353,16 @@ end
 if ~deleteGenes
     % create a lpModel for use in parfor loop
     lpModel=convertModel(model);
-    % set minimum bound on growth and change objective to product
-    % synthesis, so FBA will only have a non-zero objective if KO does not 
-    % prevent growth or product synthesis
-    lpModel.lb(lpModel.c==1)=minGrowth;
-    lpModel.c(ismember(model.rxns,biomassRxn))=0;
-    lpModel.c(ismember(model.rxns,targetRxn))=1;
+%     set minimum bound on product so FBA will only have a non-zero
+%     objective if KO does not prevent product synthesis
+   lpModel.lb(ismember(model.rxns,targetRxn))=minProd;
+
+%     % set minimum bound on growth and change objective to product
+%     % synthesis, so FBA will only have a non-zero objective if KO does not 
+%     % prevent growth or product synthesis
+%     lpModel.lb(lpModel.c==1)=minGrowth;
+%     lpModel.c(ismember(model.rxns,biomassRxn))=0;
+%     lpModel.c(ismember(model.rxns,targetRxn))=1;
     
     % create vector of valid reaction deletions
     validDels=~ismember(model.rxns,{targetRxn,biomassRxn});
@@ -371,6 +375,7 @@ if ~deleteGenes
     % exclude reactions that must have flux
     validDels(model.lb>0)=false;
     validDels(model.ub<0)=false;
+    
     
     % exclude reactions that are on the list of reactions to be ignored
     if ~isempty(delOptions.ignoreListRxns)
@@ -387,6 +392,7 @@ if ~deleteGenes
             end
         end
     end
+    
     
     % exclude reactions if they cannot be knocked out without knocking out
     % an essential gene or a gene on the list of genes to not be knocked
@@ -442,8 +448,10 @@ if ~deleteGenes
                 m.lb(koInds(a,:))=0;
                 m.ub(koInds(a,:))=0;
                 sTemp=optimizeCbModel2(m);
-                if sTemp.f<minProd
-                    % either growth or product synthesis was not possible
+                if ~(minGrowth<=sTemp.f)
+                %if ~(minProd<=sTemp.f)
+                    % model is infeasible or growth/product are below
+                    % threshold
                     invalidDeletion(a)=true;
                     
                 end
@@ -453,6 +461,7 @@ if ~deleteGenes
             essGeneList=or(essGeneList,invalidDeletion(iC));
             
         end
+        
         
         % if a single reaction KO was found to not be feasible, then remove the
         % reaction from the list of reactions to be considered (saves
@@ -466,7 +475,7 @@ if ~deleteGenes
         % essential gene ko, and so shouldnt be considered further
         x=essGeneList;
         for a=1:length(model.rxns)
-            if validDels(a)
+            if validDels(a) && ~isempty(model.rules{a})
                 validDels(a)=~eval(model.rules{a});
             end
         end
@@ -490,8 +499,9 @@ if ~deleteGenes
         m.ub(a)=0;
         sTemp=optimizeCbModel2(m);
         
-        if sTemp.f<minProd
-            % model is infeasible or product synthesis is impossible
+        if ~(minGrowth<=sTemp.f)
+        %if ~(minProd<=sTemp.f)
+            % model is infeasible or growth/product is below threshold
             validDels(a)=false;
         end
         
@@ -945,10 +955,11 @@ else
     
     % create a lpModel for use in parfor loop
     lpModel=convertModel(model);
-    % set minimum bound on growth and change objective to  product synthesis
-    lpModel.lb(lpModel.c==1)=minGrowth;
-    lpModel.c(ismember(model.rxns,biomassRxn))=0;
-    lpModel.c(ismember(model.rxns,targetRxn))=1;
+    lpModel.lb(ismember(model.rxns,targetRxn))=minProd;
+%     % set minimum bound on growth and change objective to  product synthesis
+%     lpModel.lb(lpModel.c==1)=minGrowth;
+%     lpModel.c(ismember(model.rxns,biomassRxn))=0;
+%     lpModel.c(ismember(model.rxns,targetRxn))=1;
     
     % find if the reaction KOs caused by gene KOs stop model from meeting
     % growth/product thresholds
@@ -962,7 +973,7 @@ else
         m.ub(rxnDelMat(a,:))=0;
         sTemp=optimizeCbModel2(m);
         
-        if sTemp.f<minProd
+        if ~(minGrowth<=sTemp.f)
             feasibleSolutions(a)=false;
         end
     end
@@ -970,6 +981,7 @@ else
     % remove any gene deletion if the reaction deletions it is linked to
     % lower growth/product by too much
     feasSols2=feasibleSolutions(newToOld);
+
     validDels=and(validDels,feasSols2);
     
     

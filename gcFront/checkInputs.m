@@ -15,7 +15,7 @@ end
 
 optionsnames=fieldnames(options);
 
-validOptions={'solver' 'biomassrxn' 'tol' 'tiltval' 'shiftval' 'skipreduction' 'mingrowth' 'minprod' 'removeredundancy' 'saveresults' 'maxknockouts' 'deletegenes' 'ignorelistrxns' 'ignorelistgenes' 'dontkoess' 'onlykogeneassoc' 'mutationrate' 'popsize' 'genlimit' 'timelimit' 'fitnesslimit' 'spreadchangelimit' 'stallgenlimit' 'plotinterval' 'starttime'};
+validOptions={'solver' 'biomassrxn' 'tol' 'tiltval' 'shiftval' 'skipreduction' 'mingrowth' 'minprod' 'removeredundancy' 'saveresults' 'maxknockouts' 'deletegenes' 'ignorelistrxns' 'ignorelistgenes' 'dontkoess' 'onlykogeneassoc' 'mutationrate' 'popsize' 'genlimit' 'timelimit' 'fitnesslimit' 'spreadchangelimit' 'stallgenlimit' 'plotinterval' 'starttime','newredundantremoval','maxreductionsize'};
 
 % check for any fields in the options structure that are not recognised
 unknownOptions=optionsnames(~ismember(optionsnames,validOptions));
@@ -93,6 +93,10 @@ for a=1:length(suppliedFields)
             options.stallgenlimit=checkInputType(options.stallgenlimit,'posInteger',suppliedFields{a},[1,1]);
         case 'plotinterval'
             options.plotinterval=checkInputType(options.plotinterval,'posInteger',suppliedFields{a},[1,1]);
+        case 'newredundantremoval'
+            options.newredundantremoval=checkInputType(options.newredundantremoval,'logical',suppliedFields{a},[1,1]);
+        case 'maxreductionsize'
+            options.maxreductionsize=checkInputType(options.maxreductionsize,'posNumeric',suppliedFields{a},[1,1]);
     end
 end
 
@@ -146,7 +150,7 @@ if isempty(options.mingrowth)
     options.mingrowth=10^-3;
 end
 if isempty(options.minprod)
-    options.minprod=10^-3;
+    options.minprod=10^-2;
 end
 if isempty(options.removeredundancy)
     options.removeredundancy=true;
@@ -196,7 +200,20 @@ end
 if isempty(options.plotinterval)
     options.plotinterval=1;
 end
-
+if isempty(options.newredundantremoval)
+    options.newredundantremoval=true;
+end
+if isempty(options.maxreductionsize)
+    options.maxreductionsize=15;
+elseif options.newredundantremoval==false
+    if options.maxreductionsize~=15 && options.removeredundancy==true
+        warning('Old removal of redundant deletions has been selected, but this cannot use maxreductionsize.')
+    end
+    options.maxreductionsize=inf;
+end
+if options.maxreductionsize<options.maxknockouts && options.removeredundancy==true && ~isempty(optionsnames)
+    warning(['Maximum number of allowable knockouts (',num2str(options.maxknockouts) ,') is greater than maximum number of knockouts than are allowed during design reduction (',num2str(options.maxreductionsize),'), so some designs may not have redundant KOs removed'])
+end
 
 
 %% CHECKING MODEL
@@ -227,10 +244,36 @@ if ischar(model)
         try
             model=readCbModel(model);
         catch errorStruct2
-            
-            warning(['Searched current directory for model- error message: ',errorStruct.message])
-            warning(['Searched provided address for model- error message: ',errorStruct2.message])
-            error('Model address does not lead to a valid model')
+            if length(model)>=4 && isequal(model(end-3:end),'.mat')
+                % if still nothing and model is a .mat file, try extracting
+                % only the necessary fields from this file in case
+                % some redundant field is causing problems
+                try
+                    model=load(model);
+                    tempFields=fields(model);
+                    if length(tempFields)~=1
+                        error(' ')
+                    else
+                        eval(['model=model.',tempFields{:},';'])
+                    end
+                    necessaryFields={'S','mets','b','csense','rxns','lb','ub','c','osenseStr','genes','rules','grRules','rxnGeneMat','modelID'};
+                    redundantFields=setdiff(fields(model),necessaryFields);
+                    if ~isempty(redundantFields)
+                        model=rmfield(model,redundantFields);
+                    end
+                catch
+                    % terminate if model could not be loaded
+                    warning(['Searched current directory for model- error message: ',errorStruct.message])
+                    warning(['Searched provided address for model- error message: ',errorStruct2.message])
+                    error('Model address does not lead to a valid model')
+                end
+                
+            else
+                % terminate if model could not be loaded
+                warning(['Searched current directory for model- error message: ',errorStruct.message])
+                warning(['Searched provided address for model- error message: ',errorStruct2.message])
+                error('Model address does not lead to a valid model')
+            end
             
         end
     end
@@ -268,33 +311,61 @@ if isempty(options.biomassrxn)
 end
 model=changeObjective(model,options.biomassrxn);
 
-% check if the fields rxnGeneMat, genes and rules are present
-geneFields={'rxnGeneMat','genes','rules'};
+% check if the fields rxnGeneMat, genes, rules and grRules are present
+geneFields={'rxnGeneMat','genes','rules','grRules'};
 presentGeneFields=isfield(model,geneFields);
 if sum(presentGeneFields)~=length(presentGeneFields)
-    % if they are not, disable any options that use them
+    % if they are not, check if any options that use these fields are
+    % enabled
     if options.onlykogeneassoc || options.deletegenes || ~isempty(options.ignorelistgenes) || options.dontkoess
         
-        % warn the user if this will change a setting that they supplied
-        geneUsingFields={'onlykogeneassoc','deletegenes','ignorelistgenes','dontkoess'};
-        userSetFields=ismember(geneUsingFields,suppliedFields);
-        if sum(userSetFields)~=0
-            warning(['Model does not contain field(s): ',geneFields{~presentGeneFields}, ' so option(s): ',geneUsingFields{userSetFields},' cannot be used'])
+        if isfield(model,'genes') && or(isfield(model,'rules'),isfield(model,'grRules'))
+            % if model contains genes and at least 1 rules field, build the other
+            % fields from this
+
+            if ~isfield(model,'grRules')
+                model.grRules=model.rules;
+                
+                model.grRules=strrep(model.grRules,'&','and');
+                model.grRules=strrep(model.grRules,'|','or');
+                
+                for a=1:length(model.genes)
+                    model.grRules=strrep(model.grRules,['x(',num2str(a),')'],model.genes{a});
+                end
+            end
+            
+            if ~isfield(model,'rules')
+                model.rules=model.grRules;
+                model.rules=strrep(model.rules,'and','&');
+                model.rules=strrep(model.rules,'or','|');
+                
+                for a=1:length(model.genes)
+                    model.rules=strrep(model.rules,model.genes{a},['x(',num2str(a),')']);
+                end
+            end
+            
+            if ~isfield(model,'rxnGeneMat')
+                model=buildRxnGeneMat(model);
+            end
+                
+        else
+            
+            % warn the user if this will change a setting that they supplied
+            geneUsingFields={'onlykogeneassoc','deletegenes','ignorelistgenes','dontkoess'};
+            userSetFields=ismember(geneUsingFields,suppliedFields);
+            if sum(userSetFields)~=0
+                warning(['Model does not contain field(s): ',geneFields{~presentGeneFields}, ' so option(s): ',geneUsingFields{userSetFields},' cannot be used'])
+            end
+            
+            % switch off these options
+            options.onlykogeneassoc=false;
+            options.deletegenes=false;
+            options.ignorelistgenes={};
+            options.dontkoess=false;
         end
-        
-        % switch off these options
-        options.onlykogeneassoc=false;
-        options.deletegenes=false;
-        options.ignorelistgenes={};
-        options.dontkoess=false;   
     end
 end
 
-% add a grRules field if genes are being deleted and one is not already
-% present
-if options.deletegenes && ~isfield(model,'grRules')
-    model=creategrRulesField(model);
-end
 
 % check if reactions and genes to be ignored are present
 if ~isempty(options.ignorelistrxns)
@@ -340,7 +411,7 @@ if s.stat~=1
 elseif s.f==0
     error('Biomass reaction cannot carry flux')
 elseif s.f<options.mingrowth
-    error('minGrowth will always exceed biomass flux- please lower minGrowth')
+    error('Biomass reaction is below minimum flux threshold- please lower minGrowth')
 end
 
 % put model name in options structure so it is saved with parameters
@@ -427,7 +498,7 @@ end
 % check target reaction can carry flux
 m=changeObjective(model,targetRxn);
 s=optimizeCbModel(m);
-if s.f==0
+if s.f==0 || s.stat~=1
     error('Target reaction cannot be active with current constraints')
 elseif s.f<options.minprod
     error('Target reaction cannot exceed minimum flux threshold- consider adjusting constraints or minprod')

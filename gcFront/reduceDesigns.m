@@ -7,9 +7,10 @@ function [designTable]=reduceDesigns(model, currDesigns, currFitnesses, FitnessF
     allTestedDesigns=currDesigns;
     
     while 1
-        
+
         nNewDesigns=sum(currDesigns,2);
         nNewDesigns(completeDesigns)=0;
+
         if sum(nNewDesigns)==0
             % end loop if every design has already been reduced
             break
@@ -62,9 +63,7 @@ function [designTable]=reduceDesigns(model, currDesigns, currFitnesses, FitnessF
         
         
         % find fitnesses using fitnessFcn
-        
         newFitnesses=-feval(FitnessFcn,newDesigns);
-        
         
         % keep any of the designs that are GC
         gcInds=newFitnesses(:,2)>tol;
@@ -149,7 +148,7 @@ function [designTable]=reduceDesigns(model, currDesigns, currFitnesses, FitnessF
                 minimalDesigns(b,:)=sum(tempDesigns(matchingInds(~redundantDels),:),1)==sum(~redundantDels);
             end
         end
-        
+
         % remove non-unique minimal designs
         minimalDesigns=unique(minimalDesigns,'rows');
         % remove any designs that are already in allTestedDesigns
@@ -247,7 +246,6 @@ function [designTable]=reduceDesigns(model, currDesigns, currFitnesses, FitnessF
         currFitnesses=tempFitnesses(onFront,:);
         completeDesigns=tempCompleted(onFront,:);
         
-       
         
     end
     

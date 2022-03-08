@@ -103,6 +103,14 @@ switch dd.Value
         lbl.Text={'Number of generations that should pass before the plot showing all', 'the designs should be updated'};
         textEntry.ValueChangedFcn=@(dd,event)updateOptionsFromFig(dd,event,'plotinterval');
         
+    case 'newredundantremoval'
+        lbl.Text={'If redundant KOs are to be removed, enter 1 to use new (faster)', 'removal of redundancy, or 0 to remove redundancy as was done in', 'the gcFront paper'};
+        textEntry.ValueChangedFcn=@(dd,event)updateOptionsFromFig(dd,event,'newredundantremoval');
+    
+    case 'maxreductionsize'
+        lbl.Text={'Designs with more KOs than this parameter will not have redundant', 'KOs fully removed, to reduce the number of combinations to analyse.', 'Note- only works with newredundantremoval method!' };
+        textEntry.ValueChangedFcn=@(dd,event)updateOptionsFromFig(dd,event,'maxreductionsize');
+        
     otherwise
         lbl.Text='Unrecognised option';
         textEntry.ValueChangedFcn=@(dd,event)updateOptionsFromFig(dd,event,'');

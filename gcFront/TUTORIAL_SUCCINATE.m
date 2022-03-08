@@ -35,6 +35,8 @@ save('e_coli_core.mat','model'); % saving change in bounds
 % options.mingrowth=10^-3;         % Double specifying the minimum growth threshold- do not consider any deletion that lower growth below this value. Default  =  10^-3
 % options.minprod=10^-3;           % Double specifying the minimum product threshold- do not consider any deletion that lowers maxmimum product synthesis below this value. Default  =  10^-3
 % options.removeredundancy=true;   % Logical that detemines if any redundant deletions should be removed from the designs that the GA identifies. Default  =  true
+% options.newredundantremoval=true;% Logical specifying whether to use a new, faster method for removing redundant KOs, or to use the original version that was used to obtain the data for the gcFront paper.
+% options.maxreductionsize=15;     % Double specifying the maximum size of design that should be fully explored for removal of redundant KOs
 % options.saveresults=true;        % Logical that determines if results and algorithm parameters shoudl be saved. Default  =  true
 % options.deletegenes=false;       % Logical that determines if algorithm should test gene knockouts or reaction knockouts. Default  =  false (i.e. algorithm will knock out reactions)
 % options.ignorelistrxns={};       % cell array of reactions that user does not want to be knocked knocked out (e.g. reactions that are associated with experimentally inaccessible genes). Default  =  {} (i.e. no reactions)
@@ -49,7 +51,6 @@ save('e_coli_core.mat','model'); % saving change in bounds
 % options.spreadchangelimit=10^-4; % Double specifying how low the change in spread must be before the algorithm terminates. For further information see MATLAB's 'gamultiobj Algorithm' documentation. Default  =  10^-4 
 % options.stallgenlimit=[];        % Double specifying the number of generations that change in spread must be below spreadchangelimit before the algorithm terminates. For further information see MATLAB's 'gamultiobj Algorithm' documentation. Default  =  number of generations (i.e. the algorithm will never terminate due to spread being too low)
 % options.plotinterval=1;          % Double specifying the number of generations that must pass before the algorithm updates the plot of the current designs. Default  =  1 (i.e. updates every generation)
-% 
 % [designTable,algParams,reducedModel]=gcFront(model,target,options);
 % 
 
