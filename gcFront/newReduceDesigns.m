@@ -46,7 +46,7 @@ while 1
 
     % end reduction if designs cannot be reduced further
     if isempty(newDesigns)
-        fprintf('\nTerminating removal of redundant KOs- no further reduction possible')
+        fprintf('\nTerminating removal of redundant KOs- no further reduction possible\n\n')
         break
     else
         fprintf(['\nRemoval of redundant KOs round ',num2str(iteration),', Reduction strictness = ',num2str(reductionLevel),'/4, New designs: '])

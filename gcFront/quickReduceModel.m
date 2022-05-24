@@ -3,7 +3,6 @@ function [model,delsToInds]=quickReduceModel(model, biomassRxn, targetRxn, minGr
 % pathways, and find the indices of a list of potential gene/reaction
 % knockouts
 
-
 m=convertModel(model);
 m.lb(m.c==1)=minGrowth;
 environment=getEnvironment();
@@ -161,18 +160,58 @@ if delOptions.skipReduction==0
                 consC=-model.c(consumingRxns);
             end
             
+            % record the upper bound on the reaction, to allow for
+            % rescaling of reaction bounds later
+            oldUpperLimit=min([consBounds(2),prodBounds(2)]);
+            
+            
             % adjust stoichiometry of consuming reaction to match producing
             % reaction
+            % if adjusting stoichiometry by more than 3 orders of
+            % magnitude, don't combine, since this is probably a biomass
+            % reaction that is spread over multiple parts
             multiplier=-prodStoich(a)/consStoich(a);
-            consStoich=consStoich*multiplier;
-            consBounds=consBounds/multiplier;
-            consC=consC*multiplier;
             
+            if -prodStoich(a)/multiplier==consStoich(a) && multiplier<=1000 && multiplier>=(1/1000)
+                consStoich=consStoich*multiplier;
+                consBounds=consBounds/multiplier;
+                consC=consC*multiplier;
+            else
+                % stoichiometry is creating a mathematical error- try
+                % dividing instead of multiplying
+                divisor=-consStoich(a)/prodStoich(a);
+                if -prodStoich(a)*divisor~=consStoich(a) || divisor>1000 || divisor<(1/1000)
+                    % do not combine if combination introduces mathematical
+                    % errors or if reaction stoichiometry is drastically
+                    % different (as this is probably a biomass reaction
+                    % that has not been set as an objective)
+                    a=a+1;
+                    if a>length(model.mets)
+                        if changedAnything==true
+                            % repeat the process in case combining reactions made it
+                            % possible to combine more reactions
+                            
+                            changedAnything=false;
+                            a=1;
+                        else
+                            % no more reactions can be combined
+                            break
+                        end
+                    end
+                    continue
+                else
+                    consStoich=consStoich/divisor;
+                    consBounds=consBounds*divisor;
+                    consC=consC/divisor;
+                end
+            end
+
             
             % create pooled reaction by combining stoichiometry + bounds
             jointStoich=prodStoich+consStoich;
             jointBounds=[max(prodBounds(1),consBounds(1)), min(prodBounds(2),consBounds(2))];
             jointC=prodC+consC;
+            
             
             if jointBounds(2)==0
                 % reaction is only going in reverse direction- reorder reaction
@@ -181,13 +220,21 @@ if delOptions.skipReduction==0
                 jointC=-jointC;
             end
             
+            % rescale reaction bounds as appropriate
+            changeInLimits=oldUpperLimit/jointBounds(2);
+            jointStoich=jointStoich/changeInLimits;
+            jointBounds=jointBounds*changeInLimits;
+            jointC=jointC/changeInLimits;
+            
             %          surfNet(model,model.mets(a))
+            
             
             model.S(:,producingRxns)=jointStoich;
             model.S(:,consumingRxns)=0;
             model.lb(producingRxns)=jointBounds(1);
             model.ub(producingRxns)=jointBounds(2);
             model.c(producingRxns)=jointC;
+            
             
             % combine fields associated with reactions
             
@@ -318,6 +365,8 @@ if delOptions.skipReduction==0
             changedAnything=true;
         end
         a=a+1;
+        
+
         if a>length(model.mets)
             if changedAnything==true
                 % repeat the process in case combining reactions made it
@@ -916,13 +965,27 @@ else
     % check for genes on the list of genes to be ignored
     if ~isempty(delOptions.ignoreListGenes)
         for a=1:length(validDels)
-            % check if gene is part of the list of reactions to be
-            % ignored
-            isForbidden=ismember(splitString(model.genes{a},'/'), delOptions.ignoreListGenes);
-            % exclude if it is on list
-            if sum(isForbidden)==length(isForbidden)
-                validDels(a)=false;
+            % split gene set into subsets where at least one of the genes
+            % must be KOd to KO gene set
+            splitGenes=splitString(model.genes{a},'+');
+            % split combined genes into individual genes
+            splitGenes2=splitString(splitGenes,'/');
+            % Check that KO subsets contain at least one gene that is not
+            % on the ignoreList- otherwise, gene set cannot be disabled
+            for b=1:size(splitGenes2,1)
+                if sum(ismember(splitGenes2{b},delOptions.ignoreListGenes))==length(splitGenes2{b})
+                    validDels(a)=false;
+                end
             end
+            % Old way of checking- didn't account for reactions being
+            % combined with a plus, only combined with a slash.
+%             % check if gene is part of the list of reactions to be
+%             % ignored
+%             isForbidden=ismember(splitString(model.genes{a},'/'), delOptions.ignoreListGenes);
+%             % exclude if it is on list
+%             if sum(isForbidden)==length(isForbidden)
+%                 validDels(a)=false;
+%             end
         end
     end
     
