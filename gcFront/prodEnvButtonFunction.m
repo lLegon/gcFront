@@ -28,7 +28,9 @@ if ~isempty(deletions)
             xlabel('Growth rate (/h)')
             ylabel('Target flux (mmol/gDW/h)')
             ylim([0,ceil(max(wtEnv(:,2)))])
-            box off
+            % box off % HAD TO REMOVE THIS BECAUSE COBRA DON'T CHECK IF
+            % THE NAMES OF THEIR NEW FUNCTIONS ARE ALREADY USED IN BASE
+            % MATLAB!!!!
         else
             % a production envelope figure exists- continue
             break
